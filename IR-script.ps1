@@ -1,39 +1,3 @@
-<#
-.SYNOPSIS
-    IR-FirstLook-TXT-v4.ps1 - Dependency-free Windows incident response first-look collector.
-
-.DESCRIPTION
-    Parses Windows Event Logs for the last N days and produces investigator-ready summaries and decorated TXT evidence files:
-      - Authentication activity
-      - Failed logon clustering
-      - External IP activity
-      - Risky logon types
-      - Successful logons after repeated failures
-      - Account and privilege changes
-      - New services and scheduled tasks
-      - PowerShell abuse indicators
-      - Process creation indicators, if 4688 auditing exists
-      - Defender/security changes
-      - Log clearing / anti-forensics
-      - Audit coverage limitations
-
-    Designed for PowerShell 5.1+ with no external modules. Outputs clean TXT evidence files instead of CSV/Excel-style files.
-
-.EXAMPLE
-    .\IR-FirstLook.ps1
-
-.EXAMPLE
-    .\IR-FirstLook.ps1 -DaysBack 7 -OutputPath C:\IR_Report
-
-.EXAMPLE
-    .\IR-FirstLook.ps1 -DaysBack 3 -VerboseMode
-
-.NOTES
-    Best run as Administrator.
-    This script can only analyze telemetry that exists. If auditing was not enabled,
-    the report will state that clearly instead of hiding the limitation.
-#>
-
 [CmdletBinding()]
 param(
     [int]$DaysBack = 7,
@@ -204,8 +168,6 @@ function Get-WinEventsSafe {
     $errors = New-Object System.Collections.Generic.List[object]
 
     try {
-        # First try the efficient targeted query. Some Windows builds/providers are picky with large ID arrays,
-        # so this is followed by a fallback query if it returns nothing or errors.
         $filter = @{ LogName = $LogName; StartTime = $Start }
         if ($Ids -and $Ids.Count -gt 0) { $filter['Id'] = $Ids }
         $all = @(Invoke-EventQueryInternal -Filter $filter)
@@ -214,8 +176,6 @@ function Get-WinEventsSafe {
         $all = @()
     }
 
-    # Fallback: query the log by time only, then filter event IDs in PowerShell.
-    # This specifically fixes cases where Security has events, but the Id-array query returns zero.
     if (($all.Count -eq 0) -and $Ids -and $Ids.Count -gt 0) {
         try {
             $filter2 = @{ LogName = $LogName; StartTime = $Start }
@@ -396,8 +356,7 @@ function Test-SuspiciousPowerShellText {
     )
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
 
-    # Do not treat normal Windows PowerShell lifecycle/provider events as suspicious just because they mention
-    # -NoProfile, -ExecutionPolicy Bypass, or provider startup. Installers and AppX operations commonly do that.
+    
     if ($EventID -in @(400,403,600)) {
         $strongLifecyclePatterns = @(
             '(?i)\s-enc(odedcommand)?\b',
@@ -420,7 +379,6 @@ function Test-SuspiciousPowerShellText {
         return $false
     }
 
-    # For script block/module/command events, use the broader suspicious PowerShell vocabulary.
     $patterns = @(
         '(?i)\s-enc(odedcommand)?\b',
         '(?i)\bfrombase64string\b',
@@ -502,8 +460,6 @@ function Export-DecoratedText {
         [switch]$IncludeDetailView
     )
 
-    # Deliberately simple writer. No Format-Table, no Out-String table formatting, no fragile overloads.
-    # The goal is investigation evidence, not pretty PowerShell formatting.
     try {
         $data = @()
         if ($null -ne $Rows) { $data = @($Rows) }
@@ -615,7 +571,7 @@ function Export-DecoratedText {
         $utf8NoBom2 = New-Object System.Text.UTF8Encoding -ArgumentList $false
         [System.IO.File]::WriteAllLines($Path, [string[]]$lines.ToArray(), $utf8NoBom2)
     } catch {
-        # Export failures must never break collection or spam the console.
+        
         try {
             $fallbackLines = @(
                 ''.PadLeft(120, '='),
@@ -628,7 +584,7 @@ function Export-DecoratedText {
             )
             [System.IO.File]::WriteAllLines($Path, [string[]]$fallbackLines, [System.Text.Encoding]::UTF8)
         } catch {
-            # Swallow last-resort export failure to avoid console pollution.
+           
         }
 
         try {
@@ -1160,8 +1116,6 @@ foreach ($svc in $AllServiceEvents) {
     if ($svc.PSObject.Properties.Name -contains 'ImagePath') { $path = $svc.ImagePath }
     if ($svc.PSObject.Properties.Name -contains 'ServiceFileName' -and $svc.ServiceFileName) { $path = $svc.ServiceFileName }
 
-    # New services are always worth reviewing, but not every service install is a High finding.
-    # System32/Program Files vendor services are usually update/install activity; suspicious writable paths stay High/Critical.
     $sev = 'Medium'
     if (Test-SuspiciousPathOrCommand $path) { $sev = 'High' }
     $lowerPath = ([string]$path).ToLowerInvariant()
@@ -1187,8 +1141,7 @@ if ($ProcessCreates.Count -eq 0) {
 }
 
 if ($PowerShellSuspicious.Count -gt 0) {
-    # Aggregate repeated lifecycle entries from the same PowerShell HostApplication where possible.
-    # Script block events still appear individually in SuspiciousPowerShell_Decorated.txt with timestamps.
+  
     foreach ($grp in @($PowerShellSuspicious | Group-Object Text)) {
         $sample = @($grp.Group | Sort-Object TimeCreated | Select-Object -First 1)[0]
         $last = @($grp.Group | Sort-Object TimeCreated -Descending | Select-Object -First 1)[0]
@@ -1213,8 +1166,7 @@ if ($PowerShellRecords.Count -eq 0) {
     Add-Finding -Severity 'Low' -Category 'Audit Coverage' -Title 'No PowerShell telemetry found' -Detail 'No relevant PowerShell events were found. Script Block Logging may be disabled, logs may be missing, or no activity occurred.'
 }
 
-# Defender can generate many 5007 configuration-change events during legitimate update/maintenance activity.
-# Keep every raw Defender event in DefenderEvents_Decorated.txt, but aggregate duplicate findings so the priority list stays usable.
+
 $DefenderFindingGroups = @($DefenderEvents | Group-Object EventID, EventName)
 foreach ($grp in $DefenderFindingGroups) {
     $sample = @($grp.Group | Sort-Object TimeCreated | Select-Object -First 1)[0]
