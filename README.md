@@ -69,22 +69,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\IR-FirstLook.ps1
 The script creates a timestamped report folder with files such as:
 
 ```text
+Execution_Metadata.txt
+FailedLogons_BySourceIP_Decorated.txt
+FailedLogons_ByUser_Decorated.txt
+Findings.json
+Findings_Decorated.txt
 IR_Summary.html
 IR_Summary.txt
-Findings.json
-Execution_Metadata.txt
-Findings_Decorated.txt
-FailedLogons_Decorated.txt
-SuccessfulLogons_Decorated.txt
-ExplicitCredentialUse_Decorated.txt
-SuccessAfterFailures_Decorated.txt
 NewServices_Decorated.txt
-ScheduledTasks_Decorated.txt
-PowerShellActivity_Decorated.txt
-SuspiciousPowerShell_Decorated.txt
-DefenderEvents_Decorated.txt
-AuditCoverage_Decorated.txt
-LogQueryWarnings_Decorated.txt
 ```
 
 Event-level files include fields such as `TimeCreated`, `EventID`, `LogName`, `ProviderName`, `RecordId`, account details, source IPs, process names, and command lines when available.
